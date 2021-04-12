@@ -48,16 +48,89 @@ const updateRepoPkgJson = (newPkgJson, prevSha) => {
       sha: prevSha,
       branch: 'main', // develop
     })
-    
+    .then(res => res.data.commit.sha);
 };
 
-// console.log(updatePackageJson('patch'));
+const createTag = (commitSha, version) => {
+  return octokit
+    .request('POST /repos/{owner}/{repo}/git/tags', {
+      ...repo,
+      tag: `v${version}`,
+      message: `v${version}`,
+      object: commitSha,
+      type: 'commit',
+    }).then(res => {
+      const { sha, tag } = res.data;
+      return octokit.request('POST /repos/{owner}/{repo}/git/refs', {
+        ...repo,
+        sha,
+        ref: `refs/tags/${tag}`,
+      })
+    })
+};
+
+const getCommitDate = (sha) => {
+  return octokit.request('GET /repos/{owner}/{repo}/commits/{ref}', {
+    ...repo,
+    ref: sha
+  }).then(res => res.data.commit.author.date)
+}
+
+const getLastTag = () => {
+  return octokit
+    .request('GET /repos/{owner}/{repo}/tags', {
+      ...repo,
+      per_page: 1,
+    })
+    .then(res => {
+      if (res.data.length > 0) {
+        return res.data[0]
+      }
+    });
+};
+
+const getLastTagDate = async () => {
+  const lastTag = await getLastTag();
+
+  if (lastTag) {
+    const { sha } = lastTag.commit;
+    return await getCommitDate(sha);
+  } else {
+    return new Date(2000, 01, 01).toISOString();
+  }
+};
+
+const createAndCommitPkgJson = async () => {
+  const pkgJsonSha = await getPackageJsonSha();
+  const newPkgJson = updatePkgJsonVersion('patch');
+  const newPkgJsonSha = await updateRepoPkgJson(newPkgJson, pkgJsonSha);
+  return {
+    pkgJsonSha: newPkgJsonSha,
+    newVersion: newPkgJson.version,
+  }
+}
+
+const getMergedPrsSinceDate = (fromDate) => {
+  return octokit
+    .request('GET /repos/{owner}/{repo}/comments', {
+      ...repo,
+      since: fromDate,
+    }).then(res => console.log(res.data));
+}
 
 (async () => {
   try {
-    const pkgJsonSha = await getPackageJsonSha();
-    const newPkgJson = updatePkgJsonVersion('patch');
-    await updateRepoPkgJson(newPkgJson, pkgJsonSha);
+    /*
+      Update PackageJSON
+      Upload it to the repo
+      Get commits since last tag
+      Create repo with these commit titles
+      Create Tag
+    */
+
+    // const lastTagDate = await getLastTagDate();
+    // await getMergedPrsSinceDate(lastTagDate);
+    // await createTag(newPkgJsonSha, newPkgJson.version);
   } catch (error) {
     console.error(`Error updating repo: ${error}`);
   }

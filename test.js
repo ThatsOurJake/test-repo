@@ -103,6 +103,9 @@ const getLastTagDate = async () => {
 const createAndCommitPkgJson = async () => {
   const pkgJsonSha = await getPackageJsonSha();
   const newPkgJson = updatePkgJsonVersion('patch');
+
+  console.log(`Updated version: ${newPkgJson.version}`);
+
   const newPkgJsonSha = await updateRepoPkgJson(newPkgJson, pkgJsonSha);
   return {
     pkgJsonSha: newPkgJsonSha,
@@ -112,10 +115,48 @@ const createAndCommitPkgJson = async () => {
 
 const getMergedPrsSinceDate = (fromDate) => {
   return octokit
-    .request('GET /repos/{owner}/{repo}/comments', {
+    .request('GET /repos/{owner}/{repo}/pulls', {
       ...repo,
-      since: fromDate,
-    }).then(res => console.log(res.data));
+      head: 'main', // develop
+      state: 'closed',
+      sort: 'updated'
+    }).then(res => res.data.filter(pr => {
+      const mergedAt = new Date(pr.merged_at);
+      return mergedAt > new Date(fromDate);
+    }).map(pr => ({
+      url: pr.html_url,
+      title: pr.title,
+    })));
+}
+
+const constructPrMessage = (prs = []) => {
+  if (prs.length > 0) {
+    let baseStr = '# Change log 🚀\n';
+    baseStr += prs.map(pr => `- ${pr.title}: ${pr.url}`).join('\n');
+    return baseStr;
+  }
+
+  return `# Change log 🚀\n *No PRs found please update manually!*`;
+};
+
+const createPullRequest = (prs, version) => {
+  return octokit
+    .request('POST /repos/{owner}/{repo}/pulls', {
+      ...repo,
+      title: `v${version}`,
+      head: 'main', //develop,
+      base: 'release', // master
+      body: constructPrMessage(prs),
+      maintainer_can_modify: true,
+    }).then(res => res.data.html_url);
+};
+
+const submitPr = async (version) => {
+  const lastTagDate = await getLastTagDate();
+  console.log(`Last Release: ${lastTagDate}`);
+  const prs = await getMergedPrsSinceDate(lastTagDate);
+  console.log(`Prs found: ${prs.length}`);
+  return await createPullRequest(prs, version);
 }
 
 (async () => {
@@ -128,9 +169,11 @@ const getMergedPrsSinceDate = (fromDate) => {
       Create Tag
     */
 
-    // const lastTagDate = await getLastTagDate();
-    // await getMergedPrsSinceDate(lastTagDate);
-    // await createTag(newPkgJsonSha, newPkgJson.version);
+    const { newVersion, pkgJsonSha } = await createAndCommitPkgJson();
+    const prUrl = await submitPr(newVersion);
+    await createTag(pkgJsonSha, newVersion);
+
+    console.log(`PR created @ ${prUrl}`);
   } catch (error) {
     console.error(`Error updating repo: ${error}`);
   }

@@ -123,7 +123,9 @@ const getMergedPrsSinceDate = (fromDate) => {
     }).then(res => res.data.filter(pr => {
       const mergedAt = new Date(pr.merged_at);
       return mergedAt > new Date(fromDate);
-    }).map(pr => ({
+    })
+    .filter(x => !x.title.startsWith('[RELEASE]'))
+    .map(pr => ({
       url: pr.html_url,
       title: pr.title,
     })));
@@ -143,7 +145,7 @@ const createPullRequest = (prs, version) => {
   return octokit
     .request('POST /repos/{owner}/{repo}/pulls', {
       ...repo,
-      title: `v${version}`,
+      title: `[RELEASE] v${version}`,
       head: 'main', //develop,
       base: 'release', // master
       body: constructPrMessage(prs),

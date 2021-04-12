@@ -44,7 +44,7 @@ const updateRepoPkgJson = (newPkgJson, prevSha) => {
       ...repo,
       path: 'package.json',
       message: `Bump version to ${newPkgJson.version}`,
-      content: btoa(JSON.stringify(newPkgJson)),
+      content: btoa(JSON.stringify(newPkgJson, null, 2)),
       sha: prevSha,
       branch: 'main', // develop
     })

@@ -132,7 +132,7 @@ const getMergedPrsSinceDate = (fromDate) => {
     })
     .then((res) =>
       res.data
-        .filter((pr) => pr.pr.merged_at)
+        .filter((pr) => pr.merged_at)
         .filter((pr) => new Date(pr.merged_at) > new Date(fromDate))
         .filter((x) => !x.title.startsWith(prPrefix))
         .map((pr) => ({
@@ -188,5 +188,6 @@ const submitPr = async (version) => {
     console.log(`PR created @ ${prUrl}`);
   } catch (error) {
     console.error(`Error updating repo: ${error}`);
+    console.error(error.stack);
   }
 })();

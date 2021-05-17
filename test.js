@@ -19,7 +19,7 @@ const repo = {
 };
 
 const updatePkgJsonVersion = (versionType) => {
-  const pkgJson = require('../package.json');
+  const pkgJson = require('./package.json');
   const currentVersion = pkgJson.version;
 
   const validVersionTypes = ['minor', 'major', 'patch'];
@@ -39,7 +39,7 @@ const getPackageJsonSha = () => {
     .request('GET /repos/{owner}/{repo}/contents/{path}', {
       ...repo,
       path: 'package.json',
-      ref: 'develop',
+      ref: 'main',
     })
     .then((res) => res.data.sha);
 };
@@ -52,7 +52,7 @@ const updateRepoPkgJson = (newPkgJson, prevSha) => {
       message: `Bump version to ${newPkgJson.version}`,
       content: btoa(JSON.stringify(newPkgJson, null, 2)),
       sha: prevSha,
-      branch: 'develop',
+      branch: 'main',
     })
     .then((res) => res.data.commit.sha);
 };
@@ -126,7 +126,7 @@ const getMergedPrsSinceDate = (fromDate) => {
   return octokit
     .request('GET /repos/{owner}/{repo}/pulls', {
       ...repo,
-      head: 'develop',
+      head: 'main',
       state: 'closed',
       sort: 'updated',
     })
@@ -155,8 +155,8 @@ const createPullRequest = (prs, version) => {
     .request('POST /repos/{owner}/{repo}/pulls', {
       ...repo,
       title: `${prPrefix} v${version}`,
-      head: 'develop',
-      base: 'master',
+      head: 'main',
+      base: 'release',
       body: constructPrMessage(prs),
       maintainer_can_modify: true,
     })

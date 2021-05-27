@@ -73,6 +73,8 @@ const createTag = (commitSha, version) => {
         sha,
         ref: `refs/tags/${tag}`,
       });
+    }).then((res) => {
+      return res.data.ref;
     });
 };
 
@@ -92,6 +94,7 @@ const getLastTag = () => {
       per_page: 1,
     })
     .then((res) => {
+      console.log(res.data);
       if (res.data.length > 0) {
         return res.data[0];
       }
@@ -129,6 +132,7 @@ const getMergedPrsSinceDate = (fromDate) => {
       head: 'main',
       state: 'closed',
       sort: 'updated',
+      direction: 'desc',
     })
     .then((res) =>
       res.data
@@ -150,12 +154,12 @@ const constructPrMessage = (prs = []) => {
   return `# Change log 🚀\n *No PRs found please update manually!*`;
 };
 
-const createPullRequest = (prs, version) => {
+const createPullRequest = (prs, version, tagRef) => {
   return octokit
     .request('POST /repos/{owner}/{repo}/pulls', {
       ...repo,
       title: `${prPrefix} v${version}`,
-      head: 'main',
+      head: tagRef,
       base: 'release',
       body: constructPrMessage(prs),
       maintainer_can_modify: true,
@@ -163,12 +167,12 @@ const createPullRequest = (prs, version) => {
     .then((res) => res.data.html_url);
 };
 
-const submitPr = async (version) => {
+const submitPr = async (version, tagRef) => {
   const lastTagDate = await getLastTagDate();
   console.log(`Last Release: ${lastTagDate}`);
   const prs = await getMergedPrsSinceDate(lastTagDate);
   console.log(`Prs found: ${prs.length}`);
-  return createPullRequest(prs, version);
+  return createPullRequest(prs, version, tagRef);
 };
 
 (async () => {
@@ -182,8 +186,8 @@ const submitPr = async (version) => {
     */
 
     const { newVersion, pkgJsonSha } = await createAndCommitPkgJson();
-    const prUrl = await submitPr(newVersion);
-    await createTag(pkgJsonSha, newVersion);
+    const tagRef = await createTag(pkgJsonSha, newVersion);
+    const prUrl = await submitPr(newVersion, tagRef);
 
     console.log(`PR created @ ${prUrl}`);
   } catch (error) {

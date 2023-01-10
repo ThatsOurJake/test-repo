@@ -18,9 +18,23 @@ const repo = {
   repo: 'test-repo',
 };
 
-const updatePkgJsonVersion = (versionType) => {
+const getLastTag = async () => {
+  return octokit
+    .request('GET /repos/{owner}/{repo}/tags', {
+      ...repo,
+      per_page: 1,
+    })
+    .then((res) => {
+      if (res.data.length > 0) {
+        return res.data[0];
+      }
+    });
+};
+
+const updatePkgJsonVersion = async (versionType) => {
   const pkgJson = require('./package.json');
-  const currentVersion = pkgJson.version;
+  const tag = await getLastTag();
+  const currentVersion = tag.name.slice(1);
 
   const validVersionTypes = ['minor', 'major', 'patch'];
 
@@ -87,20 +101,6 @@ const getCommitDate = (sha) => {
     .then((res) => res.data.commit.author.date);
 };
 
-const getLastTag = () => {
-  return octokit
-    .request('GET /repos/{owner}/{repo}/tags', {
-      ...repo,
-      per_page: 1,
-    })
-    .then((res) => {
-      console.log(res.data);
-      if (res.data.length > 0) {
-        return res.data[0];
-      }
-    });
-};
-
 const getLastTagDate = async () => {
   const lastTag = await getLastTag();
 
@@ -114,7 +114,7 @@ const getLastTagDate = async () => {
 
 const createAndCommitPkgJson = async () => {
   const pkgJsonSha = await getPackageJsonSha();
-  const newPkgJson = updatePkgJsonVersion(semVer);
+  const newPkgJson = await updatePkgJsonVersion(semVer);
 
   console.log(`Updated version: ${newPkgJson.version}`);
 

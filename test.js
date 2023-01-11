@@ -14,7 +14,7 @@ if (!semVer) {
 }
 
 const repo = {
-  owner: 'jki12',
+  owner: 'ThatsOurJake',
   repo: 'test-repo',
 };
 

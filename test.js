@@ -3,18 +3,48 @@ const { Octokit } = require('@octokit/core');
 const semverInc = require('semver/functions/inc');
 const btoa = require('btoa');
 
-const TOKEN = process.env.TOKEN;
+const octokit = new Octokit({ auth: process.env.GIT_TC_TOKEN });
 
-const octokit = new Octokit({ auth: TOKEN });
+const prPrefix = '[RELEASE]';
+
+const [semVer] = process.argv.slice(2);
+if (!semVer) {
+  console.log('Usage: create-release <major|minor|patch>');
+  process.exit(1);
+}
 
 const repo = {
-  owner: 'jki12',
+  owner: 'ThatsOurJake',
   repo: 'test-repo',
 };
 
-const updatePkgJsonVersion = (versionType) => {
+const getCommitDate = async (sha) => {
+  return octokit
+    .request('GET /repos/{owner}/{repo}/commits/{ref}', {
+      ...repo,
+      ref: sha,
+    })
+    .then((res) => res.data.commit.author.date);
+};
+
+const getLastTag = async () => {
+  return octokit
+    .request('GET /repos/{owner}/{repo}/tags', {
+      ...repo,
+      per_page: 1,
+    })
+    .then(async (res) => {
+      if (res.data.length > 0) {
+        const tag = res.data[0]
+        const { sha } = tag.commit;
+        const lastTagDate = await getCommitDate(sha);
+        return { lastTag: tag.name.slice(1), lastTagDate };
+      }
+    });
+};
+
+const updatePkgJsonVersion = async (versionType, lastTag) => {
   const pkgJson = require('./package.json');
-  const currentVersion = pkgJson.version;
 
   const validVersionTypes = ['minor', 'major', 'patch'];
 
@@ -24,7 +54,7 @@ const updatePkgJsonVersion = (versionType) => {
 
   return {
     ...pkgJson,
-    version: semverInc(currentVersion, versionType),
+    version: semverInc(lastTag, versionType),
   };
 };
 
@@ -33,10 +63,10 @@ const getPackageJsonSha = () => {
     .request('GET /repos/{owner}/{repo}/contents/{path}', {
       ...repo,
       path: 'package.json',
-      ref: 'main' // develop
+      ref: 'main',
     })
-    .then(res => res.data.sha);
-}
+    .then((res) => res.data.sha);
+};
 
 const updateRepoPkgJson = (newPkgJson, prevSha) => {
   return octokit
@@ -46,9 +76,9 @@ const updateRepoPkgJson = (newPkgJson, prevSha) => {
       message: `Bump version to ${newPkgJson.version}`,
       content: btoa(JSON.stringify(newPkgJson, null, 2)),
       sha: prevSha,
-      branch: 'main', // develop
+      branch: 'main',
     })
-    .then(res => res.data.commit.sha);
+    .then((res) => res.data.commit.sha);
 };
 
 const createTag = (commitSha, version) => {
@@ -59,50 +89,22 @@ const createTag = (commitSha, version) => {
       message: `v${version}`,
       object: commitSha,
       type: 'commit',
-    }).then(res => {
+    })
+    .then((res) => {
       const { sha, tag } = res.data;
       return octokit.request('POST /repos/{owner}/{repo}/git/refs', {
         ...repo,
         sha,
         ref: `refs/tags/${tag}`,
-      })
-    })
-};
-
-const getCommitDate = (sha) => {
-  return octokit.request('GET /repos/{owner}/{repo}/commits/{ref}', {
-    ...repo,
-    ref: sha
-  }).then(res => res.data.commit.author.date)
-}
-
-const getLastTag = () => {
-  return octokit
-    .request('GET /repos/{owner}/{repo}/tags', {
-      ...repo,
-      per_page: 1,
-    })
-    .then(res => {
-      if (res.data.length > 0) {
-        return res.data[0]
-      }
+      });
+    }).then((res) => {
+      return res.data.ref;
     });
 };
 
-const getLastTagDate = async () => {
-  const lastTag = await getLastTag();
-
-  if (lastTag) {
-    const { sha } = lastTag.commit;
-    return await getCommitDate(sha);
-  } else {
-    return new Date(2000, 01, 01).toISOString();
-  }
-};
-
-const createAndCommitPkgJson = async () => {
+const createAndCommitPkgJson = async (lastTag) => {
   const pkgJsonSha = await getPackageJsonSha();
-  const newPkgJson = updatePkgJsonVersion('patch');
+  const newPkgJson = await updatePkgJsonVersion(semVer, lastTag);
 
   console.log(`Updated version: ${newPkgJson.version}`);
 
@@ -110,32 +112,33 @@ const createAndCommitPkgJson = async () => {
   return {
     pkgJsonSha: newPkgJsonSha,
     newVersion: newPkgJson.version,
-  }
-}
+  };
+};
 
 const getMergedPrsSinceDate = (fromDate) => {
   return octokit
     .request('GET /repos/{owner}/{repo}/pulls', {
       ...repo,
-      head: 'main', // develop
+      head: 'main',
       state: 'closed',
-      sort: 'updated'
-    }).then(res => res.data.filter(pr => {
-      const mergedAt = new Date(pr.merged_at);
-      return mergedAt > new Date(fromDate);
+      sort: 'updated',
+      direction: 'desc',
     })
-    .filter(x => !x.title.startsWith('[RELEASE]'))
-    .map(pr => ({
-      url: pr.html_url,
-      title: pr.title,
-    })));
-}
+    .then((res) =>
+      res.data
+        .filter((pr) => pr.merged_at)
+        .filter((pr) => new Date(pr.merged_at) > new Date(fromDate))
+        .filter((x) => !x.title.startsWith(prPrefix))
+        .map((pr) => ({
+          url: pr.html_url,
+          title: pr.title,
+        }))
+    );
+};
 
 const constructPrMessage = (prs = []) => {
   if (prs.length > 0) {
-    let baseStr = '# Change log 🚀\n';
-    baseStr += prs.map(pr => `- ${pr.title}: ${pr.url}`).join('\n');
-    return baseStr;
+    return ['# Change log 🚀', ...prs.map((pr) => `- ${pr.title}: ${pr.url}`)].join('\n');
   }
 
   return `# Change log 🚀\n *No PRs found please update manually!*`;
@@ -145,38 +148,41 @@ const createPullRequest = (prs, version) => {
   return octokit
     .request('POST /repos/{owner}/{repo}/pulls', {
       ...repo,
-      title: `[RELEASE] v${version}`,
-      head: 'main', //develop,
-      base: 'release', // master
+      title: `${prPrefix} v${version}`,
+      head: 'main',
+      base: 'release',
       body: constructPrMessage(prs),
       maintainer_can_modify: true,
-    }).then(res => res.data.html_url);
+    })
+    .then((res) => res.data.html_url);
 };
 
-const submitPr = async (version) => {
-  const lastTagDate = await getLastTagDate();
+const submitPr = async (version, lastTagDate) => {
   console.log(`Last Release: ${lastTagDate}`);
   const prs = await getMergedPrsSinceDate(lastTagDate);
   console.log(`Prs found: ${prs.length}`);
-  return await createPullRequest(prs, version);
-}
+  return createPullRequest(prs, version);
+};
 
 (async () => {
   try {
     /*
+      Get Last Tag
       Update PackageJSON
       Upload it to the repo
       Get commits since last tag
-      Create repo with these commit titles
+      Create PR with these merged pr titles
       Create Tag
     */
 
-    const { newVersion, pkgJsonSha } = await createAndCommitPkgJson();
-    const prUrl = await submitPr(newVersion);
+    const { lastTag, lastTagDate } = await getLastTag()
+    const { newVersion, pkgJsonSha } = await createAndCommitPkgJson(lastTag);
     await createTag(pkgJsonSha, newVersion);
+    const prUrl = await submitPr(newVersion, lastTagDate);
 
     console.log(`PR created @ ${prUrl}`);
   } catch (error) {
     console.error(`Error updating repo: ${error}`);
+    console.error(error.stack);
   }
 })();

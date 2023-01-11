@@ -167,6 +167,7 @@ const submitPr = async (version, lastTagDate) => {
 (async () => {
   try {
     /*
+      Get Last Tag
       Update PackageJSON
       Upload it to the repo
       Get commits since last tag
@@ -176,8 +177,8 @@ const submitPr = async (version, lastTagDate) => {
 
     const { lastTag, lastTagDate } = await getLastTag()
     const { newVersion, pkgJsonSha } = await createAndCommitPkgJson(lastTag);
-    const tagRef = await createTag(pkgJsonSha, newVersion);
-    const prUrl = await submitPr(newVersion, tagRef, lastTagDate);
+    await createTag(pkgJsonSha, newVersion);
+    const prUrl = await submitPr(newVersion, lastTagDate);
 
     console.log(`PR created @ ${prUrl}`);
   } catch (error) {

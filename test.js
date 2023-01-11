@@ -14,8 +14,8 @@ if (!semVer) {
 }
 
 const repo = {
-  owner: 'jki12',
-  repo: 'ThatsOurJake',
+  owner: 'ThatsOurJake',
+  repo: 'test-repo',
 };
 
 const updatePkgJsonVersion = (versionType) => {

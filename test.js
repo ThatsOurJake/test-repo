@@ -43,8 +43,18 @@ const getLastTag = async () => {
     });
 };
 
-const updatePkgJsonVersion = async (versionType, lastTag) => {
-  const pkgJson = require('./package.json');
+const getPackageJson = () => {
+  return octokit
+    .request('GET /repos/{owner}/{repo}/contents/{path}', {
+      ...repo,
+      path: 'package.json',
+      ref: 'main',
+    })
+    .then((res) => res.data);
+};
+
+const updatePkgJsonVersion = async (content, versionType, lastTag) => {
+  const pkgJson = JSON.parse(Buffer.from(content, 'base64').toString('utf-8'));
 
   const validVersionTypes = ['minor', 'major', 'patch'];
 
@@ -56,16 +66,6 @@ const updatePkgJsonVersion = async (versionType, lastTag) => {
     ...pkgJson,
     version: semverInc(lastTag, versionType),
   };
-};
-
-const getPackageJsonSha = () => {
-  return octokit
-    .request('GET /repos/{owner}/{repo}/contents/{path}', {
-      ...repo,
-      path: 'package.json',
-      ref: 'main',
-    })
-    .then((res) => res.data.sha);
 };
 
 const updateRepoPkgJson = (newPkgJson, prevSha) => {
@@ -103,8 +103,8 @@ const createTag = (commitSha, version) => {
 };
 
 const createAndCommitPkgJson = async (lastTag) => {
-  const pkgJsonSha = await getPackageJsonSha();
-  const newPkgJson = await updatePkgJsonVersion(semVer, lastTag);
+  const { sha: pkgJsonSha, content } = await getPackageJson();
+  const newPkgJson = await updatePkgJsonVersion(content, semVer, lastTag);
 
   console.log(`Updated version: ${newPkgJson.version}`);
 
